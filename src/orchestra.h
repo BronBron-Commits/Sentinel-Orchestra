@@ -3,6 +3,7 @@
 #include <vector>
 #include <cstdint>
 #include <unordered_map>
+#include <memory>
 
 namespace sentinel {
 
@@ -17,8 +18,11 @@ public:
     virtual void step(uint64_t tick) = 0;
     virtual uint64_t hash() const = 0;
 
-    // Rollback hooks (optional)
-    virtual SystemState* save_state() const { return nullptr; }
+    // Rollback hooks
+    virtual std::unique_ptr<SystemState> save_state() const {
+        return nullptr;
+    }
+
     virtual void load_state(const SystemState* /*state*/) {}
 };
 
@@ -29,7 +33,7 @@ struct Snapshot {
 
 struct RollbackSnapshot {
     uint64_t tick;
-    std::vector<SystemState*> states;
+    std::vector<std::unique_ptr<SystemState>> states;
 };
 
 class Orchestra {
@@ -48,9 +52,9 @@ public:
         uint64_t maxTicks
     );
 
-    // Rollback hooks (no behavior yet)
+    // Rollback
     void save_snapshot(uint64_t tick);
-    void restore_snapshot(uint64_t tick);
+    bool restore_snapshot(uint64_t tick);
 
 private:
     uint64_t compute_hash() const;
