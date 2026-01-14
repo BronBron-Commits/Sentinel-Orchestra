@@ -47,6 +47,29 @@ void Orchestra::dump_snapshots() const {
     }
 }
 
+void Orchestra::save_snapshot(uint64_t tick) {
+    RollbackSnapshot snap;
+    snap.tick = tick;
+
+    for (auto* system : systems) {
+        snap.states.push_back(system->save_state());
+    }
+
+    rollback_snapshots[tick] = snap;
+}
+
+void Orchestra::restore_snapshot(uint64_t tick) {
+    auto it = rollback_snapshots.find(tick);
+    if (it == rollback_snapshots.end())
+        return;
+
+    const RollbackSnapshot& snap = it->second;
+
+    for (size_t i = 0; i < systems.size(); ++i) {
+        systems[i]->load_state(snap.states[i]);
+    }
+}
+
 void Orchestra::run(uint64_t maxTicks) {
     for (uint64_t tick = 0; tick < maxTicks; ++tick) {
         for (auto* system : systems) {
