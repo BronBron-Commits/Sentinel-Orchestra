@@ -3,6 +3,10 @@
 #include <cstring>
 #include <optional>
 
+struct CounterState : sentinel::SystemState {
+    uint64_t counter;
+};
+
 struct DummySystem : sentinel::ISystem {
     uint64_t counter = 0;
     std::optional<uint64_t> inject_at;
@@ -19,6 +23,18 @@ struct DummySystem : sentinel::ISystem {
     uint64_t hash() const override {
         return counter;
     }
+
+    // REAL rollback implementation
+    sentinel::SystemState* save_state() const override {
+        auto* s = new CounterState();
+        s->counter = counter;
+        return s;
+    }
+
+    void load_state(const sentinel::SystemState* state) override {
+        auto* s = static_cast<const CounterState*>(state);
+        counter = s->counter;
+    }
 };
 
 static std::optional<uint64_t> parse_inject_arg(int argc, char** argv) {
@@ -32,6 +48,7 @@ static std::optional<uint64_t> parse_inject_arg(int argc, char** argv) {
 
 int main(int argc, char** argv) {
     constexpr uint64_t MAX_TICKS = 10;
+    constexpr uint64_t ROLLBACK_TICK = 4;
 
     sentinel::Orchestra A;
     sentinel::Orchestra B;
@@ -44,7 +61,36 @@ int main(int argc, char** argv) {
     A.registerSystem(&sysA);
     B.registerSystem(&sysB);
 
-    sentinel::Orchestra::run_lockstep(A, B, MAX_TICKS);
+    std::cout << "=== Lockstep With Rollback Demo ===\n";
+
+    for (uint64_t tick = 0; tick < MAX_TICKS; ++tick) {
+        A.save_snapshot(tick);
+        B.save_snapshot(tick);
+
+        sysA.step(tick);
+        sysB.step(tick);
+
+        uint64_t hashA = sysA.hash();
+        uint64_t hashB = sysB.hash();
+
+        std::cout
+            << "[tick " << tick << "] "
+            << "A=0x" << std::hex << hashA
+            << "  B=0x" << hashB << std::dec;
+
+        if (hashA == hashB) {
+            std::cout << "  OK\n";
+        } else {
+            std::cout << "  MISMATCH → rolling back to tick "
+                      << ROLLBACK_TICK << "\n";
+
+            A.restore_snapshot(ROLLBACK_TICK);
+            B.restore_snapshot(ROLLBACK_TICK);
+
+            std::cout << "[rollback complete]\n";
+            break;
+        }
+    }
 
     return 0;
 }
