@@ -11,7 +11,6 @@ struct DummySystem : sentinel::ISystem {
         counter++;
 
         if (inject_at && tick == *inject_at) {
-            // Intentional deterministic corruption
             counter ^= 0xDEADBEEF;
             std::cout << "[inject] divergence injected at tick " << tick << "\n";
         }
@@ -32,13 +31,40 @@ static std::optional<uint64_t> parse_inject_arg(int argc, char** argv) {
 }
 
 int main(int argc, char** argv) {
-    sentinel::Orchestra orchestra;
-    DummySystem dummy;
+    constexpr uint64_t MAX_TICKS = 10;
 
-    dummy.inject_at = parse_inject_arg(argc, argv);
+    sentinel::Orchestra orchestraA;
+    sentinel::Orchestra orchestraB;
 
-    orchestra.registerSystem(&dummy);
-    orchestra.run(10);
+    DummySystem sysA;
+    DummySystem sysB;
+
+    // Only B gets divergence injection
+    sysB.inject_at = parse_inject_arg(argc, argv);
+
+    orchestraA.registerSystem(&sysA);
+    orchestraB.registerSystem(&sysB);
+
+    std::cout << "=== Lockstep Orchestra Demo ===\n";
+
+    for (uint64_t tick = 0; tick < MAX_TICKS; ++tick) {
+        sysA.step(tick);
+        sysB.step(tick);
+
+        uint64_t hashA = sysA.hash();
+        uint64_t hashB = sysB.hash();
+
+        std::cout
+            << "[tick " << tick << "] "
+            << "A=0x" << std::hex << hashA
+            << "  B=0x" << hashB << std::dec;
+
+        if (hashA == hashB) {
+            std::cout << "  OK\n";
+        } else {
+            std::cout << "  MISMATCH\n";
+        }
+    }
 
     return 0;
 }
