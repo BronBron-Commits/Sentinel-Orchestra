@@ -13,10 +13,9 @@ struct DummySystem : sentinel::ISystem {
 
     void step(uint64_t tick) override {
         counter++;
-
         if (inject_at && tick == *inject_at) {
             counter ^= 0xDEADBEEF;
-            std::cout << "[inject] divergence injected at tick " << tick << "\n";
+            std::cout << "[inject] divergence at tick " << tick << "\n";
         }
     }
 
@@ -24,16 +23,15 @@ struct DummySystem : sentinel::ISystem {
         return counter;
     }
 
-    // REAL rollback implementation
-    sentinel::SystemState* save_state() const override {
-        auto* s = new CounterState();
-        s->counter = counter;
-        return s;
+    // FIXED: correct override signature
+    std::unique_ptr<sentinel::SystemState> save_state() const override {
+        auto state = std::make_unique<CounterState>();
+        state->counter = counter;
+        return state;
     }
 
     void load_state(const sentinel::SystemState* state) override {
-        auto* s = static_cast<const CounterState*>(state);
-        counter = s->counter;
+        counter = static_cast<const CounterState*>(state)->counter;
     }
 };
 
@@ -55,13 +53,12 @@ int main(int argc, char** argv) {
 
     DummySystem sysA;
     DummySystem sysB;
-
     sysB.inject_at = parse_inject_arg(argc, argv);
 
     A.registerSystem(&sysA);
     B.registerSystem(&sysB);
 
-    std::cout << "=== Lockstep With Rollback Demo ===\n";
+    std::cout << "=== Rollback-Capable Lockstep ===\n";
 
     for (uint64_t tick = 0; tick < MAX_TICKS; ++tick) {
         A.save_snapshot(tick);
@@ -70,24 +67,11 @@ int main(int argc, char** argv) {
         sysA.step(tick);
         sysB.step(tick);
 
-        uint64_t hashA = sysA.hash();
-        uint64_t hashB = sysB.hash();
-
-        std::cout
-            << "[tick " << tick << "] "
-            << "A=0x" << std::hex << hashA
-            << "  B=0x" << hashB << std::dec;
-
-        if (hashA == hashB) {
-            std::cout << "  OK\n";
-        } else {
-            std::cout << "  MISMATCH → rolling back to tick "
+        if (sysA.hash() != sysB.hash()) {
+            std::cout << "[rollback] restoring to tick "
                       << ROLLBACK_TICK << "\n";
-
             A.restore_snapshot(ROLLBACK_TICK);
             B.restore_snapshot(ROLLBACK_TICK);
-
-            std::cout << "[rollback complete]\n";
             break;
         }
     }
