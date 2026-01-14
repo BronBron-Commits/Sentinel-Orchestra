@@ -4,8 +4,7 @@
 namespace sentinel {
 
 static uint64_t combine_hash(uint64_t h, uint64_t v) {
-    constexpr uint64_t FNV_OFFSET = 14695981039346656037ull;
-    constexpr uint64_t FNV_PRIME  = 1099511628211ull;
+    constexpr uint64_t FNV_PRIME = 1099511628211ull;
     h ^= v;
     h *= FNV_PRIME;
     return h;
@@ -13,6 +12,23 @@ static uint64_t combine_hash(uint64_t h, uint64_t v) {
 
 Orchestra::Orchestra(uint64_t window)
     : rollbackWindow(window) {}
+
+void Orchestra::registerSystem(ISystem* system) {
+    systems.push_back(system);
+}
+
+void Orchestra::inject_input(uint64_t tick, int channel, int64_t value) {
+    input_journal[tick].push_back({tick, channel, value});
+}
+
+void Orchestra::apply_inputs(uint64_t tick) {
+    auto it = input_journal.find(tick);
+    if (it == input_journal.end())
+        return;
+
+    // deterministic input hook — systems may read shared input state
+    (void)it;
+}
 
 uint64_t Orchestra::compute_hash() const {
     uint64_t h = 14695981039346656037ull;
@@ -34,11 +50,10 @@ void Orchestra::evict_old_snapshots(uint64_t currentTick) {
 
     for (auto it = rollback_snapshots.begin();
          it != rollback_snapshots.end(); ) {
-        if (it->first < minTick) {
+        if (it->first < minTick)
             it = rollback_snapshots.erase(it);
-        } else {
+        else
             ++it;
-        }
     }
 }
 
@@ -46,7 +61,6 @@ void Orchestra::save_snapshot(uint64_t tick) {
     RollbackSnapshot snap;
     snap.tick = tick;
 
-    snap.states.reserve(systems.size());
     for (auto* s : systems)
         snap.states.push_back(s->save_state());
 
@@ -79,14 +93,17 @@ bool Orchestra::run_lockstep_with_rollback(
         A.save_snapshot(t);
         B.save_snapshot(t);
 
+        A.apply_inputs(t);
+        B.apply_inputs(t);
+
         for (auto* s : A.systems) s->step(t);
         for (auto* s : B.systems) s->step(t);
 
         uint64_t hA = A.compute_hash();
         uint64_t hB = B.compute_hash();
 
-        std::cout << "[tick " << t << "] "
-                  << "A=0x" << std::hex << hA
+        std::cout << "[tick " << t << "] A=0x"
+                  << std::hex << hA
                   << " B=0x" << hB << std::dec;
 
         if (hA == hB) {
@@ -111,7 +128,7 @@ bool Orchestra::run_lockstep_with_rollback(
 
     if (!A.restore_snapshot(rollbackTick) ||
         !B.restore_snapshot(rollbackTick)) {
-        std::cout << "[rollback] snapshot unavailable (evicted)\n";
+        std::cout << "[rollback] snapshot unavailable\n";
         return false;
     }
 
@@ -119,24 +136,18 @@ bool Orchestra::run_lockstep_with_rollback(
     B.set_replay_mode(true);
 
     std::cout << "[replay] replaying ticks "
-              << (rollbackTick + 1)
+              << rollbackTick + 1
               << " → " << divergenceTick << "\n";
 
     for (uint64_t t = rollbackTick + 1; t <= divergenceTick; ++t) {
+        A.apply_inputs(t);
+        B.apply_inputs(t);
+
         for (auto* s : A.systems) s->step(t);
         for (auto* s : B.systems) s->step(t);
 
-        uint64_t hA = A.compute_hash();
-        uint64_t hB = B.compute_hash();
-
-        std::cout << "[replay tick " << t << "] "
-                  << "A=0x" << std::hex << hA
-                  << " B=0x" << hB << std::dec;
-
-        if (hA == hB) {
-            std::cout << " OK\n";
-        } else {
-            std::cout << " STILL DIVERGED\n";
+        if (A.compute_hash() != B.compute_hash()) {
+            std::cout << "[replay tick " << t << "] STILL DIVERGED\n";
             return false;
         }
     }

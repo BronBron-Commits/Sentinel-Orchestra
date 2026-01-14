@@ -1,22 +1,41 @@
 #include "orchestra.h"
-#include "simcore_system.h"
 #include <iostream>
+#include <cstring>
+#include <optional>
 
-int main() {
-    constexpr uint64_t ROLLBACK_WINDOW = 3;
+struct DummySystem : sentinel::ISystem {
+    uint64_t counter = 0;
 
-    sentinel::Orchestra A(ROLLBACK_WINDOW);
-    sentinel::Orchestra B(ROLLBACK_WINDOW);
+    void step(uint64_t) override {
+        counter++;
+    }
 
-    SimCoreSystem sysA;
-    SimCoreSystem sysB;
+    uint64_t hash() const override {
+        return counter;
+    }
+};
 
-    A.registerSystem(&sysA);
-    B.registerSystem(&sysB);
+static std::optional<uint64_t> parse_inject(int argc, char** argv) {
+    for (int i = 1; i < argc - 1; ++i)
+        if (!std::strcmp(argv[i], "--inject-at"))
+            return std::stoull(argv[i + 1]);
+    return std::nullopt;
+}
 
-    sentinel::Orchestra::run_lockstep_with_rollback(
-        A, B, /*maxTicks=*/20
-    );
+int main(int argc, char** argv) {
+    sentinel::Orchestra A(3);
+    sentinel::Orchestra B(3);
 
-    return 0;
+    DummySystem a;
+    DummySystem b;
+
+    A.registerSystem(&a);
+    B.registerSystem(&b);
+
+    if (auto tick = parse_inject(argc, argv)) {
+        A.inject_input(*tick, 0, 1);
+        B.inject_input(*tick, 0, 1);
+    }
+
+    sentinel::Orchestra::run_lockstep_with_rollback(A, B, 10);
 }

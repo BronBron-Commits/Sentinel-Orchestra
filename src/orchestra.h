@@ -22,9 +22,14 @@ public:
         return nullptr;
     }
 
-    virtual void load_state(const SystemState* /*state*/) {}
+    virtual void load_state(const SystemState*) {}
+    virtual void set_replay_mode(bool) {}
+};
 
-    virtual void set_replay_mode(bool /*replay*/) {}
+struct InputEvent {
+    uint64_t tick;
+    int channel;
+    int64_t value;
 };
 
 struct RollbackSnapshot {
@@ -36,9 +41,9 @@ class Orchestra {
 public:
     explicit Orchestra(uint64_t rollbackWindow);
 
-    void registerSystem(ISystem* system) {
-        systems.push_back(system);
-    }
+    void registerSystem(ISystem* system);
+
+    void inject_input(uint64_t tick, int channel, int64_t value);
 
     static bool run_lockstep_with_rollback(
         Orchestra& A,
@@ -53,11 +58,13 @@ private:
     bool restore_snapshot(uint64_t tick);
     void evict_old_snapshots(uint64_t currentTick);
 
+    void apply_inputs(uint64_t tick);
     void set_replay_mode(bool replay);
 
     uint64_t rollbackWindow;
     std::vector<ISystem*> systems;
     std::unordered_map<uint64_t, RollbackSnapshot> rollback_snapshots;
+    std::unordered_map<uint64_t, std::vector<InputEvent>> input_journal;
 };
 
 } // namespace sentinel
