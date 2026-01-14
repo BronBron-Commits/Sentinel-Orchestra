@@ -4,16 +4,10 @@
 #include <optional>
 #include <memory>
 
-// --------------------
-// Rollback state
-// --------------------
 struct CounterState : sentinel::SystemState {
     uint64_t counter;
 };
 
-// --------------------
-// Demo system
-// --------------------
 struct DummySystem : sentinel::ISystem {
     uint64_t counter = 0;
     std::optional<uint64_t> inject_at;
@@ -21,23 +15,19 @@ struct DummySystem : sentinel::ISystem {
 
     void set_replay_mode(bool replay) override {
         replaying = replay;
-        if (replay) {
-            inject_at.reset(); // disable fault injection during replay
-        }
+        if (replay)
+            inject_at.reset();
     }
 
     void step(uint64_t tick) override {
         counter++;
-
         if (!replaying && inject_at && tick == *inject_at) {
             counter ^= 0xDEADBEEF;
             std::cout << "[inject] divergence at tick " << tick << "\n";
         }
     }
 
-    uint64_t hash() const override {
-        return counter;
-    }
+    uint64_t hash() const override { return counter; }
 
     std::unique_ptr<sentinel::SystemState> save_state() const override {
         auto s = std::make_unique<CounterState>();
@@ -50,38 +40,28 @@ struct DummySystem : sentinel::ISystem {
     }
 };
 
-// --------------------
-// CLI parsing
-// --------------------
 static std::optional<uint64_t> parse_inject_arg(int argc, char** argv) {
-    for (int i = 1; i < argc - 1; ++i) {
-        if (!std::strcmp(argv[i], "--inject-divergence-at")) {
+    for (int i = 1; i < argc - 1; ++i)
+        if (!std::strcmp(argv[i], "--inject-divergence-at"))
             return std::stoull(argv[i + 1]);
-        }
-    }
     return std::nullopt;
 }
 
-// --------------------
-// Entry point
-// --------------------
 int main(int argc, char** argv) {
-    sentinel::Orchestra A;
-    sentinel::Orchestra B;
+    constexpr uint64_t ROLLBACK_WINDOW = 3;
+
+    sentinel::Orchestra A(ROLLBACK_WINDOW);
+    sentinel::Orchestra B(ROLLBACK_WINDOW);
 
     DummySystem sysA;
     DummySystem sysB;
-
     sysB.inject_at = parse_inject_arg(argc, argv);
 
     A.registerSystem(&sysA);
     B.registerSystem(&sysB);
 
     sentinel::Orchestra::run_lockstep_with_rollback(
-        A,
-        B,
-        /*maxTicks=*/10,
-        /*rollbackWindow=*/1
+        A, B, /*maxTicks=*/10
     );
 
     return 0;
