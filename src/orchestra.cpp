@@ -17,6 +17,14 @@ Orchestra::Orchestra(size_t capacity)
     snapshots.resize(snapshot_capacity);
 }
 
+uint64_t Orchestra::compute_hash() const {
+    uint64_t h = 14695981039346656037ull;
+    for (auto* system : systems) {
+        h = combine_hash(h, system->hash());
+    }
+    return h;
+}
+
 void Orchestra::record_snapshot(uint64_t tick, uint64_t hash) {
     snapshots[snapshot_head] = {tick, hash};
     snapshot_head = (snapshot_head + 1) % snapshot_capacity;
@@ -45,11 +53,7 @@ void Orchestra::run(uint64_t maxTicks) {
             system->step(tick);
         }
 
-        uint64_t hash = 14695981039346656037ull;
-        for (auto* system : systems) {
-            hash = combine_hash(hash, system->hash());
-        }
-
+        uint64_t hash = compute_hash();
         record_snapshot(tick, hash);
 
         std::cout
@@ -58,6 +62,36 @@ void Orchestra::run(uint64_t maxTicks) {
     }
 
     dump_snapshots();
+}
+
+bool Orchestra::run_lockstep(
+    Orchestra& A,
+    Orchestra& B,
+    uint64_t maxTicks
+) {
+    std::cout << "=== Lockstep Orchestra Demo ===\n";
+
+    for (uint64_t tick = 0; tick < maxTicks; ++tick) {
+        for (auto* sys : A.systems) sys->step(tick);
+        for (auto* sys : B.systems) sys->step(tick);
+
+        uint64_t hashA = A.compute_hash();
+        uint64_t hashB = B.compute_hash();
+
+        std::cout
+            << "[tick " << tick << "] "
+            << "A=0x" << std::hex << hashA
+            << "  B=0x" << hashB << std::dec;
+
+        if (hashA == hashB) {
+            std::cout << "  OK\n";
+        } else {
+            std::cout << "  MISMATCH\n";
+            return false;
+        }
+    }
+
+    return true;
 }
 
 } // namespace sentinel

@@ -33,38 +33,18 @@ static std::optional<uint64_t> parse_inject_arg(int argc, char** argv) {
 int main(int argc, char** argv) {
     constexpr uint64_t MAX_TICKS = 10;
 
-    sentinel::Orchestra orchestraA;
-    sentinel::Orchestra orchestraB;
+    sentinel::Orchestra A;
+    sentinel::Orchestra B;
 
     DummySystem sysA;
     DummySystem sysB;
 
-    // Only B gets divergence injection
     sysB.inject_at = parse_inject_arg(argc, argv);
 
-    orchestraA.registerSystem(&sysA);
-    orchestraB.registerSystem(&sysB);
+    A.registerSystem(&sysA);
+    B.registerSystem(&sysB);
 
-    std::cout << "=== Lockstep Orchestra Demo ===\n";
-
-    for (uint64_t tick = 0; tick < MAX_TICKS; ++tick) {
-        sysA.step(tick);
-        sysB.step(tick);
-
-        uint64_t hashA = sysA.hash();
-        uint64_t hashB = sysB.hash();
-
-        std::cout
-            << "[tick " << tick << "] "
-            << "A=0x" << std::hex << hashA
-            << "  B=0x" << hashB << std::dec;
-
-        if (hashA == hashB) {
-            std::cout << "  OK\n";
-        } else {
-            std::cout << "  MISMATCH\n";
-        }
-    }
+    sentinel::Orchestra::run_lockstep(A, B, MAX_TICKS);
 
     return 0;
 }

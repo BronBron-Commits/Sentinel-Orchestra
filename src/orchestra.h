@@ -27,9 +27,17 @@ public:
 
     void run(uint64_t maxTicks);
 
+    // Lockstep execution + divergence detection
+    static bool run_lockstep(
+        Orchestra& A,
+        Orchestra& B,
+        uint64_t maxTicks
+    );
+
 private:
     void record_snapshot(uint64_t tick, uint64_t hash);
     void dump_snapshots() const;
+    uint64_t compute_hash() const;
 
     std::vector<ISystem*> systems;
 
