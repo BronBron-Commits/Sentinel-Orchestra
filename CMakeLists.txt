@@ -1,30 +1,36 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.16)
 project(SentinelOrchestra LANGUAGES CXX)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# ==============================
-# Bring in sim-core (NO tests)
-# ==============================
-add_subdirectory(
-    ../Sentinel-sim-core-
-    simcore_build
-    EXCLUDE_FROM_ALL
-)
+# =========================
+# Sim Core (sibling repo)
+# =========================
+add_subdirectory(../Sentinel-sim-core- simcore_build)
 
-add_executable(sentinel-orchestra
-    src/main.cpp
+# =========================
+# Orchestra Core Library
+# =========================
+add_library(sentinel-orchestra-core STATIC
     src/orchestra.cpp
     src/simcore_system.cpp
 )
 
-target_include_directories(sentinel-orchestra
-    PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/src
+target_include_directories(sentinel-orchestra-core PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
-target_link_libraries(sentinel-orchestra
-    PRIVATE
-        simcore
+target_link_libraries(sentinel-orchestra-core PUBLIC
+    simcore
 )
+
+# =========================
+# Orchestra Demo Executable
+# =========================
+add_executable(sentinel-orchestra
+    src/main.cpp
+)
+
+target_link_libraries(sentinel-orchestra PRIVATE
+    sentinel-orchestra-core)
